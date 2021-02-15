@@ -1,0 +1,93 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job@2.40">
+  <actions>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.8.4"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.8.4">
+      <jobProperties/>
+      <triggers/>
+      <parameters>
+        <string>enviroment</string>
+        <string>deployname</string>
+      </parameters>
+      <options/>
+    </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
+  </actions>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>deployname</name>
+          <description>Name of the platform and eks cluster important to tagging the vpc resources correctly</description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.ChoiceParameterDefinition>
+          <name>enviroment</name>
+          <description>size of the platform and the cluster eks nodes</description>
+          <choices class="java.util.Arrays$ArrayList">
+            <a class="string-array">
+              <string>dev</string>
+              <string>prod</string>
+            </a>
+          </choices>
+        </hudson.model.ChoiceParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.87">
+    <script>pipeline {
+    agent any
+        environment {
+        //gitRepo = &apos;data&apos;
+        dirRepos = &apos;/var/repos&apos;
+    }
+    parameters {
+        string(name: &apos;deployname&apos;, defaultValue: &apos;&apos;, description: &apos;Name of the platform and eks cluster important to tagging the vpc resources correctly&apos;)
+        choice(name: &apos;enviroment&apos;, choices: [&apos;dev&apos;,&apos;prod&apos;], description: &apos;size of the platform and the cluster eks nodes&apos;)
+    }
+    stages {
+        stage(&apos;Deploy infra&apos;) {
+            steps{
+                sh(script:&quot;&quot;&quot;\
+                 cd /var/repos/prisma-eks-app/1-IAC-Terraform
+                 terraform init
+                 terraform apply -auto-approve -var=\&quot;deploy-name=&quot;${params.deployname}&quot;\&quot; -var=\&quot;env=&quot;${params.enviroment}&quot;\&quot;
+                 &quot;&quot;&quot;)
+            }
+        }
+        stage(&apos;Deploy helm charts&apos;) {
+            steps{
+                sh(script:&quot;&quot;&quot;\
+                 cd /var/repos/prisma-eks-app/
+                 kubectl create namespace istio-system
+                 helm install --namespace istio-system istio-base 4-helm-charts/istio-1.8.2/manifests/charts/base
+                 helm install --namespace istio-system istiod 4-helm-charts/istio-1.8.2/manifests/charts/istio-control/istio-discovery --set global.hub=&quot;docker.io/istio&quot; --set global.tag=&quot;1.8.2&quot;
+                 helm install --namespace istio-system istio-ingress 4-helm-charts/istio-1.8.2/manifests/charts/gateways/istio-ingress --set global.hub=&quot;docker.io/istio&quot; --set global.tag=&quot;1.8.2&quot;
+                 &quot;&quot;&quot;)
+            }
+        }
+        stage(&apos;Deploy ingress file&apos;) {
+            steps{
+                sh(script:&quot;&quot;&quot;\
+                 cd /var/repos/prisma-eks-app/
+                 kubectl apply -f 5-deploy-ingress
+                 &quot;&quot;&quot;)
+            }
+
+        }
+        stage(&apos;Get istio ingress endpoint&apos;) {
+            steps {
+                sh(script:&quot;&quot;&quot;\
+                kubectl get svc -n istio-system -o=jsonpath=&apos;{.items[0].status.loadBalancer.ingress[0].hostname}&apos;
+                 &quot;&quot;&quot;)
+            }
+        }
+    }
+}</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>

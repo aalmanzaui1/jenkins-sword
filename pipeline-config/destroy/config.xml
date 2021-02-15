@@ -1,0 +1,79 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job@2.40">
+  <actions>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.8.4"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.8.4">
+      <jobProperties/>
+      <triggers/>
+      <parameters>
+        <string>enviroment</string>
+        <string>deployname</string>
+      </parameters>
+      <options/>
+    </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
+  </actions>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>deployname</name>
+          <description>Name of the platform and eks cluster important to tagging the vpc resources correctly</description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.ChoiceParameterDefinition>
+          <name>enviroment</name>
+          <description>size of the platform and the cluster eks nodes</description>
+          <choices>
+            <string>dev</string>
+            <string>prod</string>
+          </choices>
+        </hudson.model.ChoiceParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.87">
+    <script>pipeline {
+    agent any
+        environment {
+        //gitRepo = &apos;data&apos;
+        dirRepos = &apos;/var/repos&apos;
+    }
+    parameters {
+        string(name: &apos;deployname&apos;, defaultValue: &apos;&apos;, description: &apos;Name of the platform and eks cluster important to tagging the vpc resources correctly&apos;)
+        choice(name: &apos;enviroment&apos;, choices: [&apos;dev&apos;,&apos;prod&apos;], description: &apos;size of the platform and the cluster eks nodes&apos;)
+    }
+    stages {
+        stage(&apos;destroy ingress file&apos;) {
+            steps{
+                sh(script:&quot;&quot;&quot;\
+                 cd /var/repos/prisma-eks-app/
+                 kubectl delete -f 5-deploy-ingress
+                 &quot;&quot;&quot;)
+            }
+        }
+        stage(&apos;destroy helm charts&apos;) {
+            steps{
+                sh(script:&quot;&quot;&quot;\
+                 cd /var/repos/prisma-eks-app/
+                 helm delete -n istio-system istio-base istiod istio-ingress
+                 &quot;&quot;&quot;)
+            }
+        }
+        stage(&apos;Destroy infra&apos;) {
+            steps{
+                sh(script:&quot;&quot;&quot;\
+                 cd /var/repos/prisma-eks-app/1-IAC-Terraform
+                 terraform destroy -auto-approve -var=\&quot;deploy-name=&quot;${params.deployname}&quot;\&quot; -var=\&quot;env=&quot;${params.enviroment}&quot;\&quot;
+                 &quot;&quot;&quot;)
+            }
+        }
+    }
+}</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>
